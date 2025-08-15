@@ -3,10 +3,10 @@ name: LANChat CI/CD Pipeline
 on:
   push:
     branches: [ main, develop ]
+    tags:
+      - 'v*'  # Запускается при push тегов
   pull_request:
     branches: [ main ]
-  release:
-    types: [ published ]
 
 env:
   PYTHON_VERSION: '3.11'
@@ -82,18 +82,19 @@ jobs:
           pytest --cov=. --cov-report=xml --cov-report=html
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           file: ./coverage.xml
           flags: unittests
           name: codecov-umbrella
           fail_ci_if_error: false
 
-  # Сборка для разных платформ
+  # Сборка для разных платформ (только при тегах)
   build:
     name: Build for ${{ matrix.platform }}
     runs-on: ${{ matrix.os }}
     needs: [lint, test]
+    if: startsWith(github.ref, 'refs/tags/')  # Только при тегах
     strategy:
       fail-fast: false
       matrix:
@@ -134,6 +135,13 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: Get version from tag
+        id: get_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          VERSION=${VERSION#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Build executable
         run: |
           if [ "${{ matrix.platform }}" = "Windows" ]; then
@@ -144,13 +152,21 @@ jobs:
             python scripts/build_linux.py
           fi
 
+      - name: Rename build artifacts
+        run: |
+          if [ "${{ matrix.platform }}" = "Windows" ]; then
+            mv dist/LANChat.exe "dist/LANChat-Windows-${{ steps.get_version.outputs.version }}.exe"
+          elif [ "${{ matrix.platform }}" = "macOS" ]; then
+            mv dist/LANChat "dist/LANChat-macOS-${{ steps.get_version.outputs.version }}"
+          else
+            mv dist/LANChat "dist/LANChat-Linux-${{ steps.get_version.outputs.version }}"
+          fi
+
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
-          path: |
-            dist/
-            build/
+          name: ${{ matrix.artifact_name }}-${{ steps.get_version.outputs.version }}
+          path: dist/
           retention-days: 30
 
   # Тестирование GUI (только на Linux)
@@ -189,18 +205,47 @@ jobs:
           root.destroy()
           "
 
-  # Создание релиза
-  release:
+  # Автоматическое создание релиза (только при тегах)
+  create-release:
     name: Create Release
     runs-on: ubuntu-latest
     needs: [build, test-gui]
-    if: github.event_name == 'release'
+    if: startsWith(github.ref, 'refs/tags/')
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@v3
+      - name: Get version from tag
+        id: get_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          VERSION=${VERSION#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+          if [ -z "$PREVIOUS_TAG" ]; then
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges)
+          else
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges $PREVIOUS_TAG..HEAD)
+          fi
+          
+          echo "# Release ${{ steps.get_version.outputs.version }}" > CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "## Changes" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "$CHANGELOG" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "---" >> CHANGELOG.md
+          echo "*This release was created automatically by GitHub Actions*" >> CHANGELOG.md
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
 
       - name: Create Release
         id: create_release
@@ -208,8 +253,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
+          tag_name: ${{ steps.get_version.outputs.tag }}
+          release_name: Release ${{ steps.get_version.outputs.version }}
+          body_path: CHANGELOG.md
           draft: false
           prerelease: false
 
@@ -219,8 +265,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./LANChat-Windows.exe/LANChat.exe
-          asset_name: LANChat-Windows.exe
+          asset_path: ./LANChat-Windows.exe-${{ steps.get_version.outputs.version }}/LANChat-Windows-${{ steps.get_version.outputs.version }}.exe
+          asset_name: LANChat-Windows-${{ steps.get_version.outputs.version }}.exe
           asset_content_type: application/octet-stream
 
       - name: Upload Release Assets (macOS)
@@ -229,8 +275,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./LANChat-macOS/LANChat
-          asset_name: LANChat-macOS
+          asset_path: ./LANChat-macOS-${{ steps.get_version.outputs.version }}/LANChat-macOS-${{ steps.get_version.outputs.version }}
+          asset_name: LANChat-macOS-${{ steps.get_version.outputs.version }}
           asset_content_type: application/octet-stream
 
       - name: Upload Release Assets (Linux)
@@ -239,22 +285,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./LANChat-Linux/LANChat
-          asset_name: LANChat-Linux
+          asset_path: ./LANChat-Linux-${{ steps.get_version.outputs.version }}/LANChat-Linux-${{ steps.get_version.outputs.version }}
+          asset_name: LANChat-Linux-${{ steps.get_version.outputs.version }}
           asset_content_type: application/octet-stream
 
-  # Деплой (опционально)
-  deploy:
-    name: Deploy
-    runs-on: ubuntu-latest
-    needs: [release]
-    if: github.event_name == 'release' && github.ref_type == 'tag'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Deploy to production
+      - name: Notify success
         run: |
-          echo "Deployment completed successfully"
-          echo "Release: ${{ github.ref }}"
-          echo "Repository: ${{ github.repository }}"
+          echo "✅ Release ${{ steps.get_version.outputs.version }} created successfully!"
+          echo "🔗 Release URL: ${{ steps.create_release.outputs.html_url }}"
+          echo "📦 Assets uploaded:"
+          echo "  - LANChat-Windows-${{ steps.get_version.outputs.version }}.exe"
+          echo "  - LANChat-macOS-${{ steps.get_version.outputs.version }}"
+          echo "  - LANChat-Linux-${{ steps.get_version.outputs.version }}"

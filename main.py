@@ -200,7 +200,7 @@ def run_cli():
                         cmd_handler.upload_file(file_path)
                 elif cmd.startswith("download "):
                     file_name = cmd.split(" ", 1)[1]
-                    source = Prompt.ask("Введите IP:порт исходного устройства")
+                    source = input("Введите IP:порт исходного устройства: ")
                     cmd_handler.download_file(file_name, source)
                 else:
                     print("Неизвестная команда, введите /help для получения справки")

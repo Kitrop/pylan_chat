@@ -1,0 +1,69 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Запускается при push тегов вида v1.0.0, v1.1.0 и т.д.
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Нужно для получения полной истории коммитов
+
+      - name: Get version from tag
+        id: get_version
+        run: |
+          # Извлекаем версию из тега (убираем 'v' в начале)
+          VERSION=${GITHUB_REF#refs/tags/}
+          VERSION=${VERSION#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Генерируем changelog из коммитов
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+          if [ -z "$PREVIOUS_TAG" ]; then
+            # Если это первый релиз, берем все коммиты
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges)
+          else
+            # Иначе берем коммиты с предыдущего тега
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges $PREVIOUS_TAG..HEAD)
+          fi
+          
+          # Сохраняем changelog в файл
+          echo "$CHANGELOG" > CHANGELOG.md
+          echo "changelog_generated=true" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.get_version.outputs.tag }}
+          release_name: Release ${{ steps.get_version.outputs.version }}
+          body_path: CHANGELOG.md
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Assets
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./dist/LANChat.exe
+          asset_name: LANChat-Windows-${{ steps.get_version.outputs.version }}.exe
+          asset_content_type: application/octet-stream
+
+      - name: Notify success
+        run: |
+          echo "✅ Release ${{ steps.get_version.outputs.version }} created successfully!"
+          echo "🔗 Release URL: ${{ steps.create_release.outputs.html_url }}"
