@@ -63,7 +63,6 @@ updates:
         patterns:
           - "pytest*"
           - "flake8*"
-          - "black*"
           - "isort*"
           - "mypy*"
           - "pylint*"
