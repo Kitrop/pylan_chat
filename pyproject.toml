@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lanchat"
-version = "1.0.0"
+version = "1.0.2"
 description = "LAN Chat Application with GUI and CLI interfaces"
 readme = "README.md"
 requires-python = ">=3.9"
