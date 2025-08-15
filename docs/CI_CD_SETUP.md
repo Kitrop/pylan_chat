@@ -39,7 +39,7 @@ Set up branch protection for `main`:
 ## Pipeline Stages
 
 ### 🔍 Lint & Quality Check
-- **Tools**: flake8, isort, mypy, pylint
+- **Tools**: flake8, mypy, pylint
 - **Trigger**: Every push and PR
 - **Duration**: ~2-3 minutes
 
@@ -90,9 +90,6 @@ pytest -m gui
 
 ### Code Quality Checks
 ```bash
-# Format code
-isort .
-
 # Lint code
 flake8 .
 pylint **/*.py
@@ -161,9 +158,6 @@ pip install -r requirements.txt
 
 #### 3. Linting Errors
 ```bash
-# Auto-fix formatting
-isort .
-
 # Check specific files
 flake8 main.py
 ```
