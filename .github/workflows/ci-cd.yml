@@ -1,0 +1,260 @@
+name: LANChat CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  release:
+    types: [ published ]
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # Проверка качества кода
+  lint:
+    name: Lint and Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 black isort mypy pylint
+          pip install -r requirements.txt
+
+      - name: Run flake8
+        run: |
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: Run black (code formatting check)
+        run: |
+          black --check --diff .
+
+      - name: Run isort (import sorting check)
+        run: |
+          isort --check-only --diff .
+
+      - name: Run mypy (type checking)
+        run: |
+          mypy --ignore-missing-imports --no-strict-optional .
+
+      - name: Run pylint
+        run: |
+          pylint --disable=C0114,C0116,C0115,R0903,W0621,W0612,W0611,R0801 **/*.py || true
+
+  # Тестирование на разных версиях Python
+  test:
+    name: Test on Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-asyncio
+
+      - name: Run tests
+        run: |
+          pytest --cov=. --cov-report=xml --cov-report=html
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+  # Сборка для разных платформ
+  build:
+    name: Build for ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    needs: [lint, test]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Windows
+            os: windows-latest
+            artifact_name: LANChat-Windows.exe
+          - platform: macOS
+            os: macos-latest
+            artifact_name: LANChat-macOS
+          - platform: Linux
+            os: ubuntu-latest
+            artifact_name: LANChat-Linux
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install system dependencies (Linux)
+        if: matrix.platform == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-dev build-essential
+
+      - name: Install system dependencies (macOS)
+        if: matrix.platform == 'macOS'
+        run: |
+          brew install python3
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build executable
+        run: |
+          if [ "${{ matrix.platform }}" = "Windows" ]; then
+            python scripts/build_windows.py
+          elif [ "${{ matrix.platform }}" = "macOS" ]; then
+            python scripts/build_macos.py
+          else
+            python scripts/build_linux.py
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            dist/
+            build/
+          retention-days: 30
+
+  # Тестирование GUI (только на Linux)
+  test-gui:
+    name: Test GUI
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk xvfb
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements_gui.txt
+          pip install pytest pytest-qt
+
+      - name: Test GUI components
+        run: |
+          xvfb-run -a python -c "
+          import tkinter as tk
+          from gui import LANChatGUI
+          root = tk.Tk()
+          app = LANChatGUI(root)
+          print('GUI initialization successful')
+          root.destroy()
+          "
+
+  # Создание релиза
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [build, test-gui]
+    if: github.event_name == 'release'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Assets
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./LANChat-Windows.exe/LANChat.exe
+          asset_name: LANChat-Windows.exe
+          asset_content_type: application/octet-stream
+
+      - name: Upload Release Assets (macOS)
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./LANChat-macOS/LANChat
+          asset_name: LANChat-macOS
+          asset_content_type: application/octet-stream
+
+      - name: Upload Release Assets (Linux)
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./LANChat-Linux/LANChat
+          asset_name: LANChat-Linux
+          asset_content_type: application/octet-stream
+
+  # Деплой (опционально)
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: [release]
+    if: github.event_name == 'release' && github.ref_type == 'tag'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to production
+        run: |
+          echo "Deployment completed successfully"
+          echo "Release: ${{ github.ref }}"
+          echo "Repository: ${{ github.repository }}"

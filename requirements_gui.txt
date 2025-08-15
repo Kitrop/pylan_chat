@@ -1,0 +1,20 @@
+# LANChat GUI Dependencies
+# Зависимости для графического интерфейса LANChat
+
+# Основные зависимости
+fastapi>=0.68.0
+uvicorn>=0.15.0
+python-multipart>=0.0.5
+zeroconf>=0.38.0
+websockets>=10.0
+requests>=2.31.0
+rich>=13.7.0
+
+# GUI зависимости (обычно включены в Python)
+# tkinter - встроен в Python
+# ttk - встроен в Python
+
+# Дополнительные зависимости для улучшенного GUI (опционально)
+# pillow>=8.0.0  # Для работы с изображениями
+# customtkinter>=5.0.0  # Для современного дизайна (опционально)
+

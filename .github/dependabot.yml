@@ -1,0 +1,72 @@
+version: 2
+updates:
+  # Python dependencies
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "your-username"
+    assignees:
+      - "your-username"
+    commit-message:
+      prefix: "pip"
+      prefix-development: "pip-dev"
+      include: "scope"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "your-username"
+    assignees:
+      - "your-username"
+    commit-message:
+      prefix: "ci"
+      prefix-development: "ci-dev"
+      include: "scope"
+
+  # PyPI dependencies (для pyproject.toml)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    target-branch: "develop"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "your-username"
+    assignees:
+      - "your-username"
+    commit-message:
+      prefix: "pip"
+      prefix-development: "pip-dev"
+      include: "scope"
+    groups:
+      python-dependencies:
+        patterns:
+          - "fastapi*"
+          - "uvicorn*"
+          - "websockets*"
+          - "requests*"
+          - "rich*"
+      dev-dependencies:
+        patterns:
+          - "pytest*"
+          - "flake8*"
+          - "black*"
+          - "isort*"
+          - "mypy*"
+          - "pylint*"
+      build-dependencies:
+        patterns:
+          - "pyinstaller*"
