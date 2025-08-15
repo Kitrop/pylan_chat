@@ -245,7 +245,7 @@ jobs:
           echo "*This release was created automatically by GitHub Actions*" >> CHANGELOG.md
 
       - name: Download all build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
 
       - name: Create Release
         id: create_release
